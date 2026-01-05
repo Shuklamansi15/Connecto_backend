@@ -1,14 +1,29 @@
-import express from 'express';
-import { loginAdmin, allInfluencers, addInfluencer, consultationsAdmin, consultationCancel, adminDashboard } from '../controllers/adminController.js';
-import { changeAvailability } from '../controllers/influencerController.js';
-import authAdmin from '../middleware/authAdmin.js';
-import upload from '../middleware/multer.js';
-const adminRouter = express.Router();
-adminRouter.post("/login", loginAdmin)
-adminRouter.post("/add-influencer", authAdmin, upload.single('image'), addInfluencer)
-adminRouter.get("/consultations", authAdmin, consultationsAdmin)
-adminRouter.post("/cancel-consultation", authAdmin, consultationCancel)
-adminRouter.get("/all-influencers", authAdmin, allInfluencers)
-adminRouter.post("/change-availability", authAdmin, changeAvailability)
-adminRouter.get("/dashboard", authAdmin, adminDashboard)
-export default adminRouter;
+import express from "express";
+import { addBus, getAllBuses, loginAdmin, addRoute, getAllRoutes, getAllBookings, adminDashboard } from "../controllers/adminController.js";
+import authAdmin from "../middleware/authAdmin.js";
+import multer from "multer";
+
+const upload = multer({ storage: multer.memoryStorage() });
+const router = express.Router();
+
+// Admin login
+router.post("/login", loginAdmin);
+
+// Auth middleware
+router.use(authAdmin);
+
+// Dashboard
+router.get("/dashboard", adminDashboard);
+
+// Buses
+router.get("/buses", getAllBuses);
+router.post("/add-bus", upload.single("image"), addBus);
+
+// Routes
+router.get("/routes", getAllRoutes);
+router.post("/add-route", addRoute);
+
+// Bookings
+router.get("/bookings", getAllBookings);
+
+export default router;

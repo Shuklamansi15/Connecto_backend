@@ -1,39 +1,47 @@
-import express from 'express';
-import { 
-    loginUser, 
-    registerUser, 
-    getProfile, 
-    updateProfile, 
-    bookConsultation, 
-    listConsultation, 
-    cancelConsultation, 
-    // paymentRazorpay, 
-    // verifyRazorpay, 
-    // paymentStripe, 
-    // verifyStripe 
-} from '../controllers/userController.js';
-import upload from '../middleware/multer.js';
-import authUser from '../middleware/authUser.js';
+import express from "express";
+import {
+  registerUser,
+  loginUser,
+  getProfile,
+  updateProfile,
+  bookBus,
+  cancelBooking,
+  listBookings,
+  getAllRoutesForUser,
+  getBusesByRoute,
+  getBusDetails,
+} from "../controllers/userController.js";
 
-const userRouter = express.Router();
+import authUser from "../middleware/authUser.js";
 
-// User authentication
-userRouter.post("/register", registerUser);
-userRouter.post("/login", loginUser);
+const router = express.Router();
 
-// User profile
-userRouter.get("/get-profile", authUser, getProfile);
-userRouter.post("/update-profile", upload.single('image'), authUser, updateProfile);
+/* ================= AUTH ================= */
+// User registration
+router.post("/register", registerUser);
+// User login
+router.post("/login", loginUser);
 
-// Consultations with influencers
-userRouter.post("/book-consultation", authUser, bookConsultation);
-userRouter.get("/consultations", authUser, listConsultation);
-userRouter.post("/cancel-consultation", authUser, cancelConsultation);
+/* ================= PROFILE ================= */
+// Get user profile (JWT required)
+router.get("/profile", authUser, getProfile);
+// Update profile (JWT required)
+router.put("/profile", authUser, updateProfile);
 
-// // Payments for consultations
-// userRouter.post("/payment-razorpay", authUser, paymentRazorpay);
-// userRouter.post("/verify-razorpay", authUser, verifyRazorpay);
-// userRouter.post("/payment-stripe", authUser, paymentStripe);
-// userRouter.post("/verify-stripe", authUser, verifyStripe);
+/* ================= ROUTES ================= */
+// Fetch all routes for search/home
+router.get("/routes", getAllRoutesForUser);
 
-export default userRouter;
+/* ================= BUSES ================= */
+// Search buses by route, date
+router.get("/buses", getBusesByRoute);
+// Single bus details by ID
+router.get("/bus/:busId", getBusDetails);
+
+/* ================= BOOKINGS ================= */
+// Booking endpoints
+router.post("/book", authUser, bookBus);
+router.get("/bookings", authUser, listBookings);
+router.delete("/booking/:bookingId", authUser, cancelBooking);
+
+export default router;

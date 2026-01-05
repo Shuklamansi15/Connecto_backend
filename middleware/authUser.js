@@ -1,19 +1,33 @@
-import jwt from 'jsonwebtoken'
+// middleware/authUser.js
+import jwt from 'jsonwebtoken';
+import User from '../models/UserModel.js';
 
-// user authentication middleware
 const authUser = async (req, res, next) => {
-    const { token } = req.headers
-    if (!token) {
-        return res.json({ success: false, message: 'Not Authorized Login Again' })
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ success: false, message: 'No token provided' });
     }
-    try {
-        const token_decode = jwt.verify(token, process.env.JWT_SECRET)
-        req.body.userId = token_decode.id
-        next()
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    if (!decoded?.id) {
+      return res.status(401).json({ success: false, message: 'Invalid token' });
     }
-}
+
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('authUser error:', err);
+    res.status(401).json({ success: false, message: 'Unauthorized' });
+  }
+};
 
 export default authUser;

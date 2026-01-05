@@ -1,178 +1,360 @@
 import jwt from "jsonwebtoken";
-import consultationModel from "../models/consultationModel.js";
-import influencerModel from "../models/influencerModel.js";
-import bcrypt from "bcrypt";
-import validator from "validator";
+import Bus from "../models/BusModel.js";
+import {Route} from "../models/routeModel.js"; // FIXED import
+import Booking from "../models/BookingModel.js";
+import User from "../models/UserModel.js";
 import { v2 as cloudinary } from "cloudinary";
-import userModel from "../models/userModel.js";
+
+/**
+ * Helper function to generate seats based on the specified bus type and prices.
+ * @param {string} busType - The type of bus (e.g., 'semi sleeper', 'sleeper', 'seater').
+ * @param {string | number} seaterPrice - Price for seater seats (passed as string from req.body).
+ * @param {string | number} sleeperPrice - Price for sleeper seats (passed as string from req.body).
+ * @returns {Array<object>} The generated seats array.
+ */
+const generateSeatsByType = (busType, seaterPrice, sleeperPrice) => {
+  const seatsArray = [];
+  const seaterP = Number(seaterPrice);
+  const sleeperP = Number(sleeperPrice);
+
+  // Columns for layout blocks
+  const LOWER_DECK_COLS = ["A", "B", "C"]; // Lower deck: A | B C
+  const UPPER_DECK_COLS = ["D", "E", "F"]; // Upper deck: D | E F
+
+  switch (busType.toLowerCase().trim()) {
+
+    /* ===================== SEATER ===================== */
+    case "seater": {
+      const ROWS = 10; // adjust as needed
+
+      for (let row = 1; row <= ROWS; row++) {
+        // Lower deck
+        LOWER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}`,
+            type: "seater",
+            berth: "lower",
+            price: seaterP,
+            isWindow: col === "A" || col === "C",
+            isBooked: false,
+            deck: 1,
+            layoutPosition: index, // optional, helps in rendering
+          });
+        });
+
+        // Upper deck
+        UPPER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}`,
+            type: "seater",
+            berth: "upper",
+            price: seaterP,
+            isWindow: col === "D" || col === "F",
+            isBooked: false,
+            deck: 2,
+            layoutPosition: index, // optional
+          });
+        });
+      }
+      break;
+    }
+
+    /* ===================== SLEEPER ===================== */
+    case "sleeper": {
+      const ROWS = 7;
+
+      // LOWER DECK
+      for (let row = 1; row <= ROWS; row++) {
+        LOWER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}L`,
+            type: "sleeper",
+            berth: "lower",
+            price: sleeperP,
+            isWindow: col === "A" || col === "C",
+            isBooked: false,
+            deck: 1,
+            layoutPosition: index,
+          });
+        });
+      }
+
+      // UPPER DECK
+      for (let row = 1; row <= ROWS; row++) {
+        UPPER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}U`,
+            type: "sleeper",
+            berth: "upper",
+            price: sleeperP,
+            isWindow: col === "D" || col === "F",
+            isBooked: false,
+            deck: 2,
+            layoutPosition: index,
+          });
+        });
+      }
+      break;
+    }
+
+    /* ===================== SEMI SLEEPER ===================== */
+    case "semi-sleeper": {
+      const SEATER_ROWS = 8;
+      const SLEEPER_ROWS = 6;
+
+      // LOWER DECK SEATERS
+      for (let row = 1; row <= SEATER_ROWS; row++) {
+        LOWER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}`,
+            type: "seater",
+            berth: "lower",
+            price: seaterP,
+            isWindow: col === "A" || col === "C",
+            isBooked: false,
+            deck: 1,
+            layoutPosition: index,
+          });
+        });
+      }
+      
+
+      // UPPER DECK SLEEPERS
+      for (let row = SEATER_ROWS + 1; row <= SEATER_ROWS + SLEEPER_ROWS; row++) {
+        UPPER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}U`,
+            type: "sleeper",
+            berth: "upper",
+            price: sleeperP,
+            isWindow: col === "D" || col === "F",
+            isBooked: false,
+            deck: 2,
+            layoutPosition: index,
+          });
+        });
+      }
+      break;
+    }
+
+    /* ===================== DEFAULT ===================== */
+    default: {
+      const ROWS = 10;
+      for (let row = 1; row <= ROWS; row++) {
+        LOWER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}`,
+            type: "seater",
+            berth: "none",
+            price: seaterP,
+            isWindow: col === "A" || col === "C",
+            isBooked: false,
+            deck: 1,
+            layoutPosition: index,
+          });
+        });
+        UPPER_DECK_COLS.forEach((col, index) => {
+          seatsArray.push({
+            seatNumber: `${row}${col}`,
+            type: "seater",
+            berth: "none",
+            price: seaterP,
+            isWindow: col === "D" || col === "F",
+            isBooked: false,
+            deck: 2,
+            layoutPosition: index,
+          });
+        });
+      }
+    }
+  }
+
+  return seatsArray;
+};
+
+
 
 // ------------------------ ADMIN LOGIN ------------------------
 const loginAdmin = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-            const token = jwt.sign({ email }, process.env.JWT_SECRET);
-            res.json({ success: true, token });
-        } else {
-            res.json({ success: false, message: "Invalid credentials" });
-        }
-
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
+  try {
+    const { email, password } = req.body;
+    if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
+      const token = jwt.sign({ email, role: "admin" }, process.env.JWT_SECRET, {
+        expiresIn: process.env.JWT_EXPIRE || "7d",
+      });
+      return res.json({ success: true, token });
+    }
+    res.status(401).json({ success: false, message: "Invalid credentials" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
-
-// ------------------------ GET ALL CONSULTATIONS ------------------------
-const consultationsAdmin = async (req, res) => {
-    try {
-        const consultations = await consultationModel
-            .find({})
-            .populate("infId", "name image")
-            .populate("userId", "name email");
-
-        res.json({ success: true, consultations });
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
-};
-
-
-// ------------------------ CANCEL CONSULTATION ------------------------
-const consultationCancel = async (req, res) => {
-    try {
-        const { consultationId } = req.body;
-
-        const exist = await consultationModel.findById(consultationId);
-        if (!exist) {
-            return res.json({ success: false, message: "Consultation not found" });
-        }
-
-        await consultationModel.findByIdAndUpdate(consultationId, { cancelled: true });
-
-        res.json({ success: true, message: "Consultation Cancelled" });
-
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
-};
-
-
-// ------------------------ ADD INFLUENCER ------------------------
-const addInfluencer = async (req, res) => {
-    try {
-        const { name, email, password, category, followers, about, socialLinks, rates, modes } = req.body;
-        const imageFile = req.file;
-
-        if (!name || !email || !password || !category || !about || !followers || !rates) {
-            return res.status(400).json({ success: false, message: "Missing required details" });
-        }
-
-        if (!validator.isEmail(email)) {
-            return res.status(400).json({ success: false, message: "Please enter a valid email" });
-        }
-
-        if (password.length < 8) {
-            return res.status(400).json({ success: false, message: "Password must be at least 8 characters" });
-        }
-
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        let imageUrl = "";
-        if (imageFile) {
-            const upload = await cloudinary.uploader.upload(imageFile.path, { resource_type: "image" });
-            imageUrl = upload.secure_url;
-        }
-
-        let socialLinksObj = {};
-        let ratesObj = {};
-        let modesArr = [];
-
-        try {
-            socialLinksObj = socialLinks ? JSON.parse(socialLinks) : {};
-            ratesObj = rates ? JSON.parse(rates) : {};
-            modesArr = modes ? JSON.parse(modes) : [];
-        } catch (err) {
-            return res.status(400).json({ success: false, message: "Invalid JSON format in socialLinks, rates, or modes" });
-        }
-
-        const influencerData = {
-            name,
-            email,
-            password: hashedPassword,
-            image: imageUrl,
-            category,
-            followers,
-            about,
-            socialLinks: socialLinksObj,
-            rates: ratesObj,
-            modes: modesArr,
-            available: true,
-            slots_booked: {},
-            date: Date.now(),
-        };
-
-        const newInfluencer = new influencerModel(influencerData);
-        await newInfluencer.save();
-
-        res.json({ success: true, message: "Influencer added successfully" });
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: error.message });
-    }
-};
-
-
-// ------------------------ GET ALL INFLUENCERS ------------------------
-const allInfluencers = async (req, res) => {
-    try {
-        const influencers = await influencerModel.find({}).select("-password");
-        res.json({ success: true, influencers });
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
-};
-
-
-// ------------------------ ADMIN DASHBOARD ------------------------
+// ------------------------ DASHBOARD ------------------------
 const adminDashboard = async (req, res) => {
-    try {
+  try {
+    const totalBuses = await Bus.countDocuments();
+    const totalRoutes = await Route.countDocuments();
+    const totalBookings = await Booking.countDocuments();
+    const totalUsers = await User.countDocuments();
 
-        const influencers = await influencerModel.find({});
-        const users = await userModel.find({});
-        const consultations = await consultationModel
-            .find({})
-            .populate("infId", "name image")
-            .populate("userId", "name email image");
+    const latestBookings = await Booking.find()
+      .populate("userId", "name email image")
+      .populate({ path: "busId", populate: { path: "routeId" } })
+      .sort({ createdAt: -1 })
+      .limit(5);
 
-        const dashData = {
-            influencers: influencers.length,
-            consultations: consultations.length,
-            users: users.length,
-            latestConsultations: consultations.reverse().slice(0, 5)
-        };
-
-        res.json({ success: true, dashData });
-
-    } catch (error) {
-        console.log(error);
-        res.json({ success: false, message: error.message });
-    }
+    res.json({
+      success: true,
+      dashboard: { totalBuses, totalRoutes, totalBookings, totalUsers, latestBookings },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
+// ------------------------ GET ALL BUSES ------------------------
+const getAllBuses = async (req, res) => {
+  try {
+    const buses = await Bus.find().populate("routeId");
+    res.json({ success: true, buses });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
 
+// ------------------------ ADD BUS ------------------------
+const addBus = async (req, res) => {
+  try {
+    if (!req.file)
+      return res.status(400).json({ success: false, message: "Bus image is required." });
+
+    const {
+      busName,
+      busType,
+      routeId,
+      amenities = "[]",
+      seaterPrice,
+      sleeperPrice,
+      departureTime,
+      arrivalTime,
+      duration,
+    } = req.body;
+
+    if (!busName || !busType || !routeId || !seaterPrice || !sleeperPrice || !departureTime || !arrivalTime || !duration) {
+      return res.status(400).json({ success: false, message: "Missing required fields." });
+    }
+
+    const imageUpload = await new Promise((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream({ folder: "buses" }, (err, result) =>
+        err ? reject(err) : resolve(result)
+      );
+      uploadStream.end(req.file.buffer);
+    });
+
+    let amenitiesArray = [];
+    try {
+      amenitiesArray = JSON.parse(amenities);
+      if (!Array.isArray(amenitiesArray)) amenitiesArray = [];
+    } catch {
+      amenitiesArray = [];
+    }
+
+    // =========================================================================
+    // ------------------------ FIXED SEAT GENERATION LOGIC ----------------------
+    // Calling the helper function to generate seats based on bus type
+    // =========================================================================
+    const seatsArray = generateSeatsByType(busType, seaterPrice, sleeperPrice);
+
+    const newBus = new Bus({
+      busName: busName.trim(),
+      busType: busType.trim(),
+      routeId,
+      amenities: amenitiesArray,
+      seats: seatsArray,
+      image: imageUpload.secure_url,
+      departureTime: departureTime.trim(),
+      arrivalTime: arrivalTime.trim(),
+      duration: duration.trim(),
+    });
+
+    await newBus.save();
+
+    res.status(201).json({ success: true, message: "Bus added successfully", bus: newBus });
+  } catch (err) {
+    console.error("Add Bus Error:", err);
+    res.status(500).json({ success: false, message: err.message || "Server error" });
+  }
+};
+
+// ------------------------ ROUTES ------------------------
+const getAllRoutes = async (req, res) => {
+  try {
+    const routes = await Route.find();
+    res.json({ success: true, routes });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+const addRoute = async (req, res) => {
+  try {
+    const { source, destination, stops = [], distance, time } = req.body;
+    if (!source || !destination)
+      return res.status(400).json({ success: false, message: "Source and destination are required" });
+    const newRoute = new Route({ source, destination, stops, distance, time });
+    await newRoute.save();
+    res.json({ success: true, message: "Route added successfully", route: newRoute });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ------------------------ BOOKINGS ------------------------
+const getAllBookings = async (req, res) => {
+  try {
+    const bookings = await Booking.find()
+      .populate("userId", "name email image")
+      .populate({ path: "busId", populate: { path: "routeId" } });
+    res.json({ success: true, bookings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ------------------------ CANCEL BOOKING ------------------------
+const cancelBooking = async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    if (!bookingId) return res.status(400).json({ success: false, message: "Booking ID required" });
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    booking.cancelled = true;
+    await booking.save();
+
+    res.json({ success: true, message: "Booking cancelled successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// ------------------------ EXPORT ------------------------
 export {
-    loginAdmin,
-    consultationsAdmin,
-    consultationCancel,
-    addInfluencer,
-    allInfluencers,
-    adminDashboard
+  loginAdmin,
+  adminDashboard,
+  getAllBuses,
+  addBus,
+  getAllRoutes,
+  addRoute,
+  getAllBookings,
+  cancelBooking, // added for admin context
 };
